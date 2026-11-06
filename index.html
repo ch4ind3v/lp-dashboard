@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LP 仓位监控看板 · ETH/BTCB</title>
+<style>
+:root{
+  --bg: oklch(0.17 0.012 260);
+  --panel: oklch(0.21 0.014 260);
+  --panel-2: oklch(0.24 0.015 260);
+  --line: oklch(0.30 0.015 260);
+  --text: oklch(0.92 0.01 95);
+  --text-2: oklch(0.65 0.012 260);
+  --accent: oklch(0.80 0.16 85);          /* BTC 金 */
+  --green: oklch(0.75 0.17 155);
+  --red: oklch(0.68 0.22 25);
+  --amber: oklch(0.80 0.15 70);
+  --radius: 12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{min-height:100dvh}
+body{
+  font:15px/1.65 ui-sans-serif,system-ui,"PingFang SC","Microsoft YaHei",sans-serif;
+  color:var(--text);background:var(--bg);min-height:100dvh;
+  -webkit-font-smoothing:antialiased;
+}
+.num{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:1080px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;padding:8px 0 20px}
+header h1{font-size:19px;font-weight:650}
+header .sub{color:var(--text-2);font-size:13px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.dot.ok{background:var(--green)} .dot.warn{background:var(--amber)} .dot.bad{background:var(--red)}
+.refresh{margin-left:auto;background:var(--panel-2);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:8px 14px;font-size:13px;min-height:44px;transition:background .15s}
+.refresh:hover{background:var(--line)}
+.refresh:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.updated{color:var(--text-2);font-size:12px}
+
+/* hero 区间标尺 */
+.hero{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.ratio-line{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.ratio-big{font-size:clamp(30px,6vw,42px);font-weight:700;color:var(--accent)}
+.chip{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);color:var(--text-2)}
+.chip.in{color:var(--green);border-color:var(--green)}
+.chip.out{color:var(--red);border-color:var(--red)}
+.track{position:relative;height:44px;margin:18px 4px 6px;background:var(--panel-2);border-radius:8px}
+.zone{position:absolute;top:0;bottom:0}
+.zone.warnz{background:color-mix(in oklch, var(--amber) 18%, transparent)}
+.zone.safe{background:color-mix(in oklch, var(--green) 10%, transparent)}
+.marker{position:absolute;top:-6px;bottom:-6px;width:3px;background:var(--accent);border-radius:2px;transition:left .5s ease-out}
+.marker::after{content:"";position:absolute;top:-5px;left:50%;transform:translateX(-50%);
+  border:5px solid transparent;border-top-color:var(--accent)}
+.scale{position:relative;height:18px;color:var(--text-2);font-size:11px}
+.scale span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.dist{display:flex;gap:16px;margin-top:12px;color:var(--text-2);font-size:13px;flex-wrap:wrap}
+.dist b{color:var(--text);font-weight:600}
+
+/* 卡片网格 */
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+.card h3{font-size:13px;color:var(--text-2);font-weight:500;margin-bottom:10px}
+.big{font-size:clamp(20px,3.5vw,26px);font-weight:700}
+.row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;font-size:13.5px;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:none}
+.row .k{color:var(--text-2)}
+.pos{color:var(--green)} .neg{color:var(--red)} .warn-t{color:var(--amber)}
+
+/* 今日手续费曲线 */
+.chart-card{margin-top:12px}
+.chart-card h3 .sub-note{color:var(--text-2);font-weight:400;font-size:12px}
+#feeChart{width:100%;height:140px;margin-top:10px;background:var(--panel-2);border-radius:8px;display:block}
+.chart-foot{display:flex;justify-content:space-between;color:var(--text-2);font-size:11px;margin-top:6px}
+
+/* 告警 */
+.alerts{margin-top:16px;display:grid;gap:8px}
+.alert{border-radius:var(--radius);padding:12px 16px;font-size:14px;border:1px solid}
+.alert.urgent{border-color:var(--red);background:color-mix(in oklch, var(--red) 12%, transparent)}
+.alert.warning{border-color:var(--amber);background:color-mix(in oklch, var(--amber) 10%, transparent)}
+.alert.ok{border-color:var(--line);background:var(--panel);color:var(--text-2)}
+footer{margin-top:24px;color:var(--text-2);font-size:12px;line-height:1.8}
+footer a{color:var(--accent)}
+.loading{opacity:.45;transition:opacity .2s}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ETH/BTCB LP 仓位监控</h1>
+    <span class="sub">Uniswap v3 · BNB Chain · 0.3% · NFT #2902816</span>
+    <button class="refresh" id="refreshBtn" type="button">刷新</button>
+    <span class="updated" id="updated">加载中…</span>
+  </header>
+
+  <section class="hero" id="heroBox">
+    <div class="ratio-line">
+      <span class="ratio-big num" id="ratio">--</span>
+      <span class="sub num">BTC/ETH</span>
+      <span class="chip" id="rangeChip">--</span>
+    </div>
+    <div class="track" id="track">
+      <div class="zone warnz" id="zLow"></div>
+      <div class="zone safe" id="zMid"></div>
+      <div class="zone warnz" id="zHigh"></div>
+      <div class="marker" id="marker" style="left:50%"></div>
+    </div>
+    <div class="scale num" id="scale"></div>
+    <div class="dist num">
+      <span>距上沿 <b id="distUp">--</b></span>
+      <span>距下沿 <b id="distDn">--</b></span>
+      <span>中心 <b id="center">--</b></span>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h3>LP 仓位估值</h3>
+      <div class="big num" id="lpValue">--</div>
+      <div class="row"><span class="k">ETH 数量</span><span class="num" id="lpEth">--</span></div>
+      <div class="row"><span class="k">BTCB 数量</span><span class="num" id="lpBtc">--</span></div>
+      <div class="row"><span class="k">vs 持有未组 LP（IL）</span><span class="num" id="il">--</span></div>
+      <div class="row"><span class="k">待收手续费（实时）</span><span class="num" id="owed">--</span></div>
+      <div class="row"><span class="k">当前费率份额</span><span class="num" id="share">--</span></div>
+    </section>
+
+    <section class="card">
+      <h3>池子收益</h3>
+      <div class="big num" id="fees24">--</div>
+      <div class="row"><span class="k">7 日平均手续费</span><span class="num" id="fees7">--</span></div>
+      <div class="row"><span class="k">TVL</span><span class="num" id="tvl">--</span></div>
+      <div class="row"><span class="k">TVL 周变化</span><span class="num" id="tvlWow">--</span></div>
+    </section>
+
+    <section class="card">
+      <h3>对冲腿（币安空单）</h3>
+      <div class="row"><span class="k">应空 ETH</span><span class="num" id="hedgeEth">--</span></div>
+      <div class="row"><span class="k">应空 BTC</span><span class="num" id="hedgeBtc">--</span></div>
+      <div class="row"><span class="k">BTC 较开仓（$80,693）</span><span class="num" id="btcGain">--</span></div>
+      <div class="row"><span class="k">ETH 较开仓（$2,434）</span><span class="num" id="ethGain">--</span></div>
+      <div class="row"><span class="k">两币同涨（保证金代理）</span><span class="num" id="marginGain">--</span></div>
+    </section>
+
+    <section class="card">
+      <h3>策略总盈亏（USD）</h3>
+      <div class="big num" id="pnlTotal">--</div>
+      <div class="row"><span class="k">LP 较建仓</span><span class="num" id="pnlLp">--</span></div>
+      <div class="row"><span class="k">空单浮盈</span><span class="num" id="pnlShort">--</span></div>
+      <div class="row"><span class="k">累计手续费</span><span class="num" id="pnlFee">--</span></div>
+      <div class="row"><span class="k">空单资金费（估算）</span><span class="num" id="pnlFunding">--</span></div>
+      <div class="row"><span class="k">同期放 Aave 9% 可得</span><span class="num" id="pnlAave">--</span></div>
+    </section>
+  </div>
+
+  <section class="card chart-card">
+    <h3>今日已赚手续费 <span class="sub-note">（feeGrowth 实时算法 · 本地每分钟 + 服务器每小时留档）</span></h3>
+    <div class="big num" id="feeToday">--</div>
+    <svg id="feeChart" viewBox="0 0 600 140" preserveAspectRatio="none" role="img" aria-label="今日手续费累计曲线"></svg>
+    <div class="chart-foot num"><span id="chartStart">--</span><span id="chartMax">--</span><span id="chartNow">--</span></div>
+  </section>
+
+  <div class="alerts" id="alerts"></div>
+
+  <footer>
+    监控线：换仓 0.031561 / 0.028672 · 预警 0.031265 / 0.028954 · 费率预警 &lt;$300/天（7日均） · TVL 周变动 ±20% · 保证金代理 15%/25%<br>
+    数据：Binance 现货价 · BNB Chain 链上仓位 · DeFiLlama 费率 · 每 60 秒自动刷新 ·
+    <a href="https://app.uniswap.org/positions/v3/bnb/2902816" target="_blank" rel="noopener">在 Uniswap 查看仓位</a>
+  </footer>
+</div>
+
+<script>
+const TICK_LO = -35520, TICK_HI = -34560;
+const RATIO_LO = 0.028672, RATIO_HI = 0.031561, CENTER = 0.030082;
+const WARN_LO = 0.028954, WARN_HI = 0.031265;
+const POOL = "0x3Fb2623567E21F8C50F0Ae86f54EF4849b4eb47b";
+const NFPM = "0x7b8A01B39D58278b5DE7e48c8449c9f4F5170613";
+const TOKEN_ID = 2902816n;
+const BSC_RPC = "https://bsc-dataseed.binance.org";
+const LLAMA = "https://yields.llama.fi/chart/a8a67ce9-3f86-4272-a305-d4b2abd58783";
+const BTC_ENTRY = 80692.74, ETH_ENTRY = 2434.07;
+const ENTRY_ETH = 16.1922, ENTRY_BTC = 0.50594;   // 建仓时 LP 构成
+const ENTRY_LP_USD = 80238.63;                    // 建仓 LP 成本（按开仓价）
+const SHORT_ETH = 16.4, SHORT_BTC = 0.500;        // 空单量
+const MARGIN_USD = 26600;                         // 空单保证金
+const ENTRY_TS = Date.UTC(2026, 10, 5, 3, 30);    // 建仓时间 2026-11-05 11:30 北京
+const FEE_FLOOR = 300, TVL_WOW = 0.20, M_WARN = 0.15, M_URGENT = 0.25;
+
+const $ = id => document.getElementById(id);
+const fmt = (n, d=2) => n == null ? "--" : Number(n).toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+const signCls = v => v > 0.0001 ? "pos" : (v < -0.0001 ? "neg" : "");
+
+async function httpJson(url, data){
+  const opt = data ? {method:"POST", headers:{"Content-Type":"application/json"}, body:data} : {};
+  const r = await fetch(url, opt);
+  if (!r.ok) throw new Error(url + " -> " + r.status);
+  return r.json();
+}
+const price = s => httpJson(`https://api.binance.com/api/v3/ticker/price?symbol=${s}`).then(d => +d.price);
+async function ethCall(to, data){
+  const r = await httpJson(BSC_RPC, JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_call",params:[{to,data},"latest"]}));
+  return r.result;
+}
+const word = (hex, i) => BigInt("0x" + hex.slice(2 + i*64, 2 + (i+1)*64));
+function int24(b){ const v = Number(b & 0xFFFFFFn); return v >= 2**23 ? v - 2**24 : v; }
+const priceOfTick = t => Math.pow(1.0001, t);
+
+function lpComp(liqHuman, tick, pa, pb){
+  const sq = Math.sqrt;
+  let p = priceOfTick(tick), x, y;
+  if (p <= pa)      { x = liqHuman*(1/sq(pa) - 1/sq(pb)); y = 0; }
+  else if (p >= pb) { x = 0; y = liqHuman*(sq(pb) - sq(pa)); }
+  else              { x = liqHuman*(1/sq(p) - 1/sq(pb)); y = liqHuman*(sq(p) - sq(pa)); }
+  return {x, y};
+}
+
+async function refresh(){
+  document.body.classList.add("loading");
+  const alerts = [];
+  try {
+    const [btc, eth] = await Promise.all([price("BTCUSDT"), price("ETHUSDT")]);
+    const ratio = eth / btc;
+
+    const tickParam = t => BigInt.asUintN(256, BigInt(t)).toString(16).padStart(64, "0");
+    const [slot0, pos, fg0, fg1, tkLo, tkHi, poolLiq] = await Promise.all([
+      ethCall(POOL, "0x3850c7bd"),                                        // slot0
+      ethCall(NFPM, "0x99fbab88" + TOKEN_ID.toString(16).padStart(64,"0")),// positions(tokenId)
+      ethCall(POOL, "0xf3058399"),                                        // feeGrowthGlobal0X128
+      ethCall(POOL, "0x46141319"),                                        // feeGrowthGlobal1X128
+      ethCall(POOL, "0xf30dba93" + tickParam(TICK_LO)),                   // ticks(tickLower)
+      ethCall(POOL, "0xf30dba93" + tickParam(TICK_HI)),                   // ticks(tickUpper)
+      ethCall(POOL, "0x1a686502"),                                        // liquidity() 池子活跃流动性
+    ]);
+    const tick = int24(word(slot0, 1));
+    const liq = word(pos, 7);
+    const last0 = word(pos, 8), last1 = word(pos, 9);       // feeGrowthInside{0,1}LastX128
+    const snap0 = word(pos, 10), snap1 = word(pos, 11);     // tokensOwed（已结算未领取）
+
+    // feeGrowth 实时算法：精确到分的应计手续费（不依赖仓位被触碰）
+    const M = 1n << 256n, Q128 = 1n << 128n;
+    const mod = a => ((a % M) + M) % M;
+    const g0 = word(fg0, 0), g1 = word(fg1, 0);
+    const lo0 = word(tkLo, 2), lo1 = word(tkLo, 3), hi0 = word(tkHi, 2), hi1 = word(tkHi, 3);
+    let in0, in1;
+    if (tick < TICK_LO)      { in0 = mod(lo0 - hi0);            in1 = mod(lo1 - hi1); }
+    else if (tick < TICK_HI) { in0 = mod(g0 - lo0 - hi0);       in1 = mod(g1 - lo1 - hi1); }
+    else                     { in0 = mod(hi0 - lo0);            in1 = mod(hi1 - lo1); }
+    const acc0 = mod(in0 - last0) * liq / Q128 + snap0;     // 应计 ETH
+    const acc1 = mod(in1 - last1) * liq / Q128 + snap1;     // 应计 BTCB
+
+    const pa = priceOfTick(TICK_LO), pb = priceOfTick(TICK_HI);
+    const {x, y} = lpComp(Number(liq)/1e18, tick, pa, pb);
+    const lpUsd = x*eth + y*btc;
+    const holdUsd = ENTRY_ETH*eth + ENTRY_BTC*btc;
+    const il = lpUsd/holdUsd - 1;
+    const accEth = Number(acc0)/1e18, accBtc = Number(acc1)/1e18;
+    const owedUsd = accEth*eth + accBtc*btc;
+
+    // ---- 手续费历史：本地每分钟采样 + 服务器每小时留档，合并绘图 ----
+    const nowMs = Date.now();
+    let srvPts = [];
+    try {
+      const r = await fetch("history.json?_=" + nowMs);
+      if (r.ok) srvPts = (await r.json()).points || [];
+    } catch(e) {}
+    let locPts = [];
+    try { locPts = JSON.parse(localStorage.getItem("feePtsV2")) || []; } catch(e) {}
+    if (!locPts.length || nowMs - locPts[locPts.length-1][0] > 30000) locPts.push([nowMs, owedUsd]);
+    locPts = locPts.filter(p => nowMs - p[0] < 48*3600e3);
+    try { localStorage.setItem("feePtsV2", JSON.stringify(locPts)); } catch(e) {}
+    // 60 秒桶合并去重（同桶本地优先）
+    const bucket = new Map();
+    for (const p of srvPts) bucket.set(Math.round(p[0]/60000), p);
+    for (const p of locPts) bucket.set(Math.round(p[0]/60000), p);
+    const allPts = [...bucket.values()].sort((a, b) => a[0] - b[0]);
+    const todayStr = new Date().toLocaleDateString("zh-CN");
+    const isToday = t => new Date(t).toLocaleDateString("zh-CN") === todayStr;
+    const todayPts = allPts.filter(p => isToday(p[0]));
+    if (!todayPts.length || nowMs - todayPts[todayPts.length-1][0] > 1000) todayPts.push([nowMs, owedUsd]);
+    // 基准取今日首点之前最后一个样本（跨午夜不断档）；应计下降视为已收取并结转
+    const i0 = allPts.findIndex(p => isToday(p[0]));
+    let base = i0 > 0 ? allPts[i0-1][1] : todayPts[0][1], carry = 0, prevV = base;
+    const series = todayPts.map(([t, v]) => {
+      if (v < prevV - 0.005){ carry += prevV - base; base = v; }
+      prevV = v;
+      return {t, e: Math.max(0, carry + v - base)};
+    });
+    const feeTodayUsd = series.length ? series[series.length-1].e : 0;
+    const srvToday = srvPts.filter(p => isToday(p[0])).length;
+    const srvLast = srvPts.length ? srvPts[srvPts.length-1][0] : null;
+
+    // 池子费率/TVL
+    let fees24=null, fees7=null, tvl=null, tvlWow=null;
+    try {
+      const hist = (await httpJson(LLAMA)).data;
+      const f = r => r.apyBase != null ? r.apyBase/100/365*r.tvlUsd : null;
+      fees24 = f(hist[hist.length-1]);
+      const d7 = hist.slice(-7).map(f).filter(v => v != null);
+      fees7 = d7.length ? d7.reduce((a,b)=>a+b,0)/d7.length : null;
+      tvl = hist[hist.length-1].tvlUsd;
+      tvlWow = tvl / hist[hist.length-8].tvlUsd - 1;
+    } catch(e) {}
+
+    const inRange = TICK_LO <= tick && tick <= TICK_HI;
+    const btcG = btc/BTC_ENTRY - 1, ethG = eth/ETH_ENTRY - 1, mG = (btcG + ethG)/2;
+
+    // ---- 渲染 ----
+    $("ratio").textContent = ratio.toFixed(6);
+    const chip = $("rangeChip");
+    chip.textContent = inRange ? "✓ 区间内" : "✗ 出区间";
+    chip.className = "chip " + (inRange ? "in" : "out");
+
+    // 标尺: 横轴 = tick 从 TICK_LO-100 到 TICK_HI+100
+    const span = (TICK_HI - TICK_LO) + 200, off = TICK_LO - 100;
+    const pct = t => Math.min(100, Math.max(0, (t - off)/span*100));
+    const w80lo = TICK_LO + (TICK_HI-TICK_LO)*0.2, w80hi = TICK_HI - (TICK_HI-TICK_LO)*0.2;
+    $("zLow").style.cssText = `left:${pct(off)}%;width:${pct(w80lo)-pct(off)}%`;
+    $("zMid").style.cssText = `left:${pct(w80lo)}%;width:${pct(w80hi)-pct(w80lo)}%`;
+    $("zHigh").style.cssText = `left:${pct(w80hi)}%;width:${pct(TICK_HI+100)-pct(w80hi)}%`;
+    $("marker").style.left = pct(tick) + "%";
+    $("scale").innerHTML =
+      `<span style="left:${pct(TICK_LO)}%">下沿 ${RATIO_LO}</span>` +
+      `<span style="left:${pct((TICK_LO+TICK_HI)/2)}%">中心 ${CENTER}</span>` +
+      `<span style="left:${pct(TICK_HI)}%">上沿 ${RATIO_HI}</span>`;
+
+    $("distUp").textContent = ((RATIO_HI/ratio - 1)*100).toFixed(2) + "%";
+    $("distDn").textContent = ((ratio/RATIO_LO - 1)*100).toFixed(2) + "%";
+    $("center").textContent = CENTER;
+
+    $("lpValue").textContent = "$" + fmt(lpUsd, 0);
+    $("lpEth").textContent = fmt(x, 4) + " ETH";
+    $("lpBtc").textContent = fmt(y, 5) + " BTCB";
+    const ilEl = $("il");
+    ilEl.textContent = (il*100).toFixed(2) + "%";
+    ilEl.className = "num " + signCls(il);
+    $("owed").textContent = "$" + fmt(owedUsd, 2);
+    $("owed").title = `${fmt(accEth, 6)} ETH + ${fmt(accBtc, 8)} BTCB（feeGrowth 实时算法）`;
+    const share = Number(liq * 100000n / BigInt(poolLiq)) / 1000;   // 百分比, BigInt 保精度
+    $("share").textContent = share.toFixed(1) + "%";
+    $("share").title = "价格在±1.5%大户带内约 5.7%，带外你的区间独享 40%+；大户撤资时告警会推送";
+
+    // 今日手续费曲线（合并序列）
+    $("feeToday").textContent = "$" + fmt(feeTodayUsd, 2);
+    const W = 600, H = 140, PD = 8;
+    if (series.length){
+      const vmax = Math.max(...series.map(p => p.e), 0.01);
+      const t0 = series[0].t, t1 = Math.max(series[series.length-1].t, t0 + 60000);
+      const X = t => PD + (t - t0)/(t1 - t0)*(W - 2*PD);
+      const Y = v => H - PD - v/vmax*(H - 2*PD - 14);
+      const line = series.map((p, i) => `${i ? "L" : "M"}${X(p.t).toFixed(1)},${Y(p.e).toFixed(1)}`).join(" ");
+      const lx = X(series[series.length-1].t), ly = Y(series[series.length-1].e);
+      $("feeChart").innerHTML =
+        `<path d="${line} L${lx.toFixed(1)},${H-PD} L${X(t0).toFixed(1)},${H-PD} Z" style="fill:color-mix(in oklch, var(--accent) 14%, transparent)"/>` +
+        `<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>` +
+        `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="4" fill="var(--accent)"/>` +
+        (vmax > 0.01 ? `<text x="${(W-PD).toFixed(0)}" y="16" text-anchor="end" style="fill:var(--text-2);font-size:11px">$${fmt(vmax,2)}</text>` : "");
+      $("chartStart").textContent = new Date(t0).toLocaleTimeString("zh-CN", {hour:"2-digit", minute:"2-digit"});
+      $("chartMax").textContent = srvLast
+        ? `本地+服务器 ${series.length} 点 · 留档截至 ${new Date(srvLast).toLocaleTimeString("zh-CN", {hour:"2-digit", minute:"2-digit"})}`
+        : `本地 ${series.length} 点 · 服务器留档暂未同步`;
+      $("chartNow").textContent = new Date().toLocaleTimeString("zh-CN", {hour:"2-digit", minute:"2-digit"});
+    }
+
+    $("fees24").textContent = fees24 != null ? "$" + fmt(fees24, 0) + " /天" : "--";
+    $("fees7").textContent = fees7 != null ? "$" + fmt(fees7, 0) + " /天" : "--";
+    $("fees7").className = "num " + (fees7 != null && fees7 < FEE_FLOOR ? "warn-t" : "");
+    $("tvl").textContent = tvl != null ? "$" + fmt(tvl/1000, 0) + "K" : "--";
+    if (tvlWow != null){
+      $("tvlWow").textContent = (tvlWow*100).toFixed(1) + "%";
+      $("tvlWow").className = "num " + (Math.abs(tvlWow) > TVL_WOW ? "warn-t" : signCls(tvlWow));
+    }
+
+    // 策略总盈亏
+    const lpDelta = lpUsd - ENTRY_LP_USD;
+    const shortPnl = SHORT_ETH*(ETH_ENTRY - eth) + SHORT_BTC*(BTC_ENTRY - btc);
+    // 空单资金费（建仓以来，按币安历史结算估算；正=多头付给你）
+    let fundingUsd = null;
+    try {
+      const frs = await Promise.all(["ETHUSDT","BTCUSDT"].map(s =>
+        httpJson(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${s}&startTime=${ENTRY_TS}`)));
+      const qty = {ETHUSDT: SHORT_ETH, BTCUSDT: SHORT_BTC};
+      fundingUsd = 0;
+      for (const arr of frs) for (const f of arr)
+        fundingUsd += parseFloat(f.fundingRate) * qty[f.symbol] * parseFloat(f.markPrice);
+    } catch(e) {}
+    const totalPnl = lpDelta + shortPnl + owedUsd + (fundingUsd || 0);
+    const aaveRef = (ENTRY_LP_USD + MARGIN_USD) * 0.09/365 * Math.max(0, (nowMs - ENTRY_TS)/86400000);
+    $("pnlTotal").textContent = (totalPnl >= 0 ? "+$" : "-$") + fmt(Math.abs(totalPnl), 2);
+    $("pnlTotal").className = "big num " + signCls(totalPnl);
+    $("pnlLp").textContent = (lpDelta >= 0 ? "+$" : "-$") + fmt(Math.abs(lpDelta), 2);
+    $("pnlLp").className = "num " + signCls(lpDelta);
+    $("pnlShort").textContent = (shortPnl >= 0 ? "+$" : "-$") + fmt(Math.abs(shortPnl), 2);
+    $("pnlShort").className = "num " + signCls(shortPnl);
+    $("pnlFee").textContent = "+$" + fmt(owedUsd, 2);
+    $("pnlFunding").textContent = fundingUsd == null ? "--" : (fundingUsd >= 0 ? "+$" : "-$") + fmt(Math.abs(fundingUsd), 2);
+    if (fundingUsd != null){
+      $("pnlFunding").className = "num " + signCls(fundingUsd);
+      $("pnlFunding").title = "按币安资金费结算记录估算；费率为正时空单收租，为负时付租";
+    }
+    $("pnlAave").textContent = "+$" + fmt(aaveRef, 2);
+    $("pnlAave").title = "对照基准：同等资金放 Aave 9% 到现在的累计利息";
+
+    $("hedgeEth").textContent = fmt(x, 4) + " ETH";
+    $("hedgeBtc").textContent = fmt(y, 5) + " BTC";
+    $("btcGain").textContent = (btcG*100).toFixed(1) + "%";
+    $("btcGain").className = "num " + signCls(btcG);
+    $("ethGain").textContent = (ethG*100).toFixed(1) + "%";
+    $("ethGain").className = "num " + signCls(ethG);
+    $("marginGain").textContent = (mG*100).toFixed(1) + "%";
+    $("marginGain").className = "num " + (mG >= M_WARN ? "warn-t" : signCls(mG));
+
+    // ---- 告警 ----
+    if (liq === 0n) alerts.push(["urgent", "LP 仓位流动性为 0——仓位可能已被撤出，请立即检查"]);
+    if (!inRange || ratio >= RATIO_HI || ratio <= RATIO_LO)
+      alerts.push(["urgent", `汇率 ${ratio.toFixed(6)} 触及换仓线：撤池 → 币安换币 → 新价 ±5% 重挂 → 重置空单`]);
+    else if (ratio >= WARN_HI || ratio <= WARN_LO)
+      alerts.push(["warning", `汇率 ${ratio.toFixed(6)} 越过 80% 预警线，准备换仓物料`]);
+    if (mG >= M_URGENT) alerts.push(["urgent", `两币同涨 ${(mG*100).toFixed(1)}%，空单保证金承压，检查币安保证金率并准备补仓`]);
+    else if (mG >= M_WARN) alerts.push(["warning", `两币同涨 ${(mG*100).toFixed(1)}%，留意空单保证金`]);
+    if (fees7 != null && fees7 < FEE_FLOOR) alerts.push(["warning", `7 日平均手续费 $${fmt(fees7,0)}/天，跌破预警线，评估是否继续`]);
+    if (tvlWow != null && Math.abs(tvlWow) > TVL_WOW) alerts.push(["warning", `TVL 周变动 ${(tvlWow*100).toFixed(0)}%，注意费率份额变化`]);
+
+    $("alerts").innerHTML = alerts.length
+      ? alerts.map(([lv, msg]) => `<div class="alert ${lv}">${lv === "urgent" ? "🚨" : "⚠️"} ${msg}</div>`).join("")
+      : `<div class="alert ok">✓ 所有监控线正常</div>`;
+
+    $("updated").textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
+  } catch (e) {
+    $("alerts").innerHTML = `<div class="alert warning">⚠️ 数据获取失败：${e.message}（下次自动刷新重试）</div>`;
+  }
+  document.body.classList.remove("loading");
+}
+
+$("refreshBtn").addEventListener("click", refresh);
+refresh();
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>
