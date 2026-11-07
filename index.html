@@ -221,7 +221,7 @@ async function refresh(){
     const ratio = eth / btc;
 
     const tickParam = t => BigInt.asUintN(256, BigInt(t)).toString(16).padStart(64, "0");
-    const [slot0, pos, fg0, fg1, tkLo, tkHi, poolLiq] = await Promise.all([
+    const [slot0, pos, fg0, fg1, tkLo, tkHi, poolLiq, tkWhale] = await Promise.all([
       ethCall(POOL, "0x3850c7bd"),                                        // slot0
       ethCall(NFPM, "0x99fbab88" + TOKEN_ID.toString(16).padStart(64,"0")),// positions(tokenId)
       ethCall(POOL, "0xf3058399"),                                        // feeGrowthGlobal0X128
@@ -229,6 +229,7 @@ async function refresh(){
       ethCall(POOL, "0xf30dba93" + tickParam(TICK_LO)),                   // ticks(tickLower)
       ethCall(POOL, "0xf30dba93" + tickParam(TICK_HI)),                   // ticks(tickUpper)
       ethCall(POOL, "0x1a686502"),                                        // liquidity() 池子活跃流动性
+      ethCall(POOL, "0xf30dba93" + tickParam(-35160)),                    // ticks(鲸鱼下沿) 监测大户回归
     ]);
     const tick = int24(word(slot0, 1));
     const liq = word(pos, 7);
@@ -336,7 +337,15 @@ async function refresh(){
     $("owed").title = `${fmt(accEth, 6)} ETH + ${fmt(accBtc, 8)} BTCB（feeGrowth 实时算法）`;
     const share = Number(liq * 100000n / BigInt(poolLiq)) / 1000;   // 百分比, BigInt 保精度
     $("share").textContent = share.toFixed(1) + "%";
-    $("share").title = "价格在±1.5%大户带内约 5.7%，带外你的区间独享 40%+；大户撤资时告警会推送";
+    const whaleGross = word(tkWhale, 0);                            // 鲸鱼下沿 tick 的 liquidityGross
+    const whaleGone = whaleGross < 200000000000000000000n;          // < 2e20 视为已撤离(粉尘忽略)
+    $("share").title = whaleGone
+      ? "±1.5% 窄带大户已撤离，你的份额不再被稀释；若其回归将推送告警"
+      : "±1.5% 窄带大户仍在场：价格进入其带内时你的份额会被稀释至个位数";
+    if (whaleGone)
+      alerts.push(["ok", `稀释源已清除：±1.5% 窄带大户（约 $36 万）已于 11-06 22:31 全部撤离，你当前费率份额 ${share.toFixed(1)}%，回归时告警`]);
+    else
+      alerts.push(["warning", `±1.5% 窄带大户仍在场（带内 L≈${(Number(whaleGross)/1e21).toFixed(2)}e21），价格进入其区间时你的份额将被稀释`]);
 
     // 今日手续费曲线（合并序列）
     $("feeToday").textContent = "$" + fmt(feeTodayUsd, 2);
@@ -420,7 +429,7 @@ async function refresh(){
     if (tvlWow != null && Math.abs(tvlWow) > TVL_WOW) alerts.push(["warning", `TVL 周变动 ${(tvlWow*100).toFixed(0)}%，注意费率份额变化`]);
 
     $("alerts").innerHTML = alerts.length
-      ? alerts.map(([lv, msg]) => `<div class="alert ${lv}">${lv === "urgent" ? "🚨" : "⚠️"} ${msg}</div>`).join("")
+      ? alerts.map(([lv, msg]) => `<div class="alert ${lv}">${lv === "urgent" ? "🚨" : lv === "ok" ? "✅" : "⚠️"} ${msg}</div>`).join("")
       : `<div class="alert ok">✓ 所有监控线正常</div>`;
 
     $("updated").textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
